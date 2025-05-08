@@ -17,10 +17,33 @@ def get_files(path):
 
 
 def parse_syzlang(files):
+    content = ""
+
     lines = []
     for f in files:
         with open(f, 'r', encoding='utf-8') as file:
-            lines += file.readlines()
+            tmp_lines = file.readlines()
+            tmp_lines = [l for l in tmp_lines if not (l.startswith("#") or l.startswith("type")) ]
+            lines.extend(tmp_lines)
+            content += "".join(tmp_lines) + "\n"
+
+
+    struct_matches = list(re.finditer(r"(\S+)\s*\{(.*?)}", content, re.DOTALL))
+    struct_map = {}
+    for match in struct_matches:
+        struct_map[match.group(1)] = {"content":match.group(2), "sub_struct": set(), "resource": set()}
+
+    change = True
+    while change:
+        change = False
+        for s in struct_map.keys():
+            for s2 in struct_map.keys():
+                if s == s2 or s2 in struct_map[s]["sub_struct"]:
+                    continue
+                if s2 in struct_map[s]["content"]:
+                    struct_map[s]["sub_struct"].add(s2)
+                    change = True
+
     resource_lines = []
     for line in lines:
         if line.startswith("resource"):
@@ -61,6 +84,14 @@ def parse_syzlang(files):
             print("No match found")
 
 
+    for s in struct_map.keys():
+        for r in r_map.keys():
+            if r in struct_map[s]["content"]:
+                struct_map[s]["resource"].add(s)
+        for s2 in struct_map[s]["sub_struct"]:
+            for r in r_map.keys():
+                if r in struct_map[s2]["content"]:
+                    struct_map[s]["resource"].add(s)
 
     for k, v in r_map.items():
         cur_parent = v["parent"]
@@ -89,6 +120,16 @@ def parse_syzlang(files):
                 r_map[r_name]["gen_by"].append(s_name)
             if "in, "+ r_name in s1:
                 r_map[r_name]["used_by"].append(s_name)
+        # for struct in struct_map.keys():
+        #     if struct in s2:
+        #         for r_name in struct_map[struct]["resource"]:
+        #             r_map[r_name]["gen_by"].append(s_name)
+        #     if "out, "+ struct in s1:
+        #         for r_name in struct_map[struct]["resource"]:
+        #             r_map[r_name]["gen_by"].append(s_name)
+        #     if "in, "+ struct in s1:
+        #         for r_name in struct_map[struct]["resource"]:
+        #             r_map[r_name]["used_by"].append(s_name)
 
     depend_map = {}
 
